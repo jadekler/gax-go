@@ -31,12 +31,21 @@ package gax
 
 import (
 	"time"
+	"sync/atomic"
 
 	"golang.org/x/net/context"
 )
 
 // A user defined call stub.
 type APICall func(context.Context, CallSettings) error
+
+func InvokeCount(ctx context.Context, call APICall, count *int64, opts ...CallOption) error {
+	var settings CallSettings
+	for _, opt := range opts {
+		opt.Resolve(&settings)
+	}
+	return invoke(ctx, call, settings, Sleep, count)
+}
 
 // Invoke calls the given APICall,
 // performing retries as specified by opts, if any.
@@ -45,7 +54,8 @@ func Invoke(ctx context.Context, call APICall, opts ...CallOption) error {
 	for _, opt := range opts {
 		opt.Resolve(&settings)
 	}
-	return invoke(ctx, call, settings, Sleep)
+	var foo int64
+	return invoke(ctx, call, settings, Sleep, &foo)
 }
 
 // Sleep is similar to time.Sleep, but it can be interrupted by ctx.Done() closing.
@@ -64,9 +74,10 @@ func Sleep(ctx context.Context, d time.Duration) error {
 type sleeper func(ctx context.Context, d time.Duration) error
 
 // invoke implements Invoke, taking an additional sleeper argument for testing.
-func invoke(ctx context.Context, call APICall, settings CallSettings, sp sleeper) error {
+func invoke(ctx context.Context, call APICall, settings CallSettings, sp sleeper, count *int64) error {
 	var retryer Retryer
 	for {
+		atomic.AddInt64(count, 1)
 		err := call(ctx, settings)
 		if err == nil {
 			return nil
